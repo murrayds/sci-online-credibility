@@ -1,0 +1,474 @@
+---
+title: "Credibility: Survey 1 Analysis"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(grid)
+library(gridExtra)
+library(stargazer)
+
+theme_credibility <- theme_minimal() + 
+  theme(plot.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        strip.text = element_text(size = 12),
+        legend.position = "none")
+
+theme_set(theme_credibility)
+
+jitter_width = 0.31
+jitter_height = 0.35
+jitter_alpha = 0.3
+```
+
+
+```{r}
+credibilityAll <- read.csv("~/Dropbox/Credibility/Data/Old/credibilityDATA.csv", stringsAsFactors = F)
+ 
+
+relevant_fields <- c("Input.Source1Text",	"Input.Source2Text",	"Input.Source3Text", 
+                     "Input.Source4Text", "Input.Source5Text", "Input.Source1Image", 
+                     "Input.Source2Image", "Input.Source3Image", "Input.Source4Image", 
+                     "Input.Source5Image", "HITId", "AssignmentId",	"WorkerId", 
+                     "Answer.Age",	"Answer.Education",	"Answer.Gender",	"Answer.US", 
+                     "Answer.Q1Credibility", "Answer.Q1Familiarity", "Answer.Q2Credibility", 
+                     "Answer.Q2Familiarity", "Answer.Q3Credibility", "Answer.Q3Familiarity",	
+                     "Answer.Q4Credibility", "Answer.Q4Familiarity", "Answer.Q5Credibility",	
+                     "Answer.Q5Familiarity", "Answer.valid", "SubmitTime")
+
+# New names for these relevant fields
+new_names <- c("Input.Source1Text" = "Q1.Study",	
+               "Input.Source2Text" = "Q2.Study",	
+               "Input.Source3Text" = "Q3.Study", 
+               "Input.Source4Text" = "Q4.Study", 
+               "Input.Source5Text" = "Q5.Study",
+               "Input.Source1Image" = "Q1.Medium", 
+               "Input.Source2Image" = "Q2.Medium", 
+               "Input.Source3Image" = "Q3.Medium", 
+               "Input.Source4Image" = "Q4.Medium", 
+               "Input.Source5Image" = "Q5.Medium",
+               "HITId" = "HITId", 
+               "AssignmentId" = "AssignmentId",	
+               "WorkerId" = "Worker.Id", 
+               "Answer.Age" = "Worker.Age",	
+               "Answer.Education" = "Worker.Education",	
+               "Answer.Gender" = "Worker.Gender",	
+               "Answer.US" = "Worker.IsUS", 
+               "Answer.Q1Credibility" = "Q1.Credibility", 
+               "Answer.Q1Familiarity" = "Q1.Farmiliarity", 
+               "Answer.Q2Credibility" = "Q2.Credibility", 
+               "Answer.Q2Familiarity" = "Q2.Farmiliarity", 
+               "Answer.Q3Credibility" = "Q3.Credibility",
+               "Answer.Q3Familiarity" = "Q3.Farmiliarity",	
+               "Answer.Q4Credibility" = "Q4.Credibility", 
+               "Answer.Q4Familiarity" = "Q4.Farmiliarity", 
+               "Answer.Q5Credibility" = "Q5.Credibility",	
+               "Answer.Q5Familiarity" = "Q5.Farmiliarity",
+               "Answer.valid" = "validity_response", 
+               "SubmitTime" = "SubmissionTime"
+               )
+
+# Select relevant fields, change names to something easier to work with
+credibility_wide <- credibilityAll[, relevant_fields] 
+names(credibility_wide) <- new_names           
+
+# define a functions to clean URLs
+clean_medium_urls <- function(url) {
+  if (grepl(".*youtube.*", url, ignore.case = T)) "youtube"
+  else if (grepl(".*_Blog.*", url, ignore.case = T)) "blog"
+  else if (grepl(".*_News.*", url, ignore.case = T)) "news"
+  else if (grepl(".*_Tweet.*", url, ignore.case = T)) "tweet"
+  else if (grepl(".*_Abstract.*", url, ignore.case = T)) "abstract"
+  else NA
+}
+  
+clean_study_urls <- function(url) {
+  if (grepl(".*Dogs.*", url, ignore.case = T)) "dogs"
+  else if (grepl(".*Caffeine.*", url, ignore.case = T)) "caffeine"
+  else if (grepl(".*Vitamin.*", url, ignore.case = T)) "vitamin"
+  else if (grepl(".*sweeteners.*", url, ignore.case = T)) "sweeteners"
+  else if (grepl(".*Marriage.*", url, ignore.case = T)) "marriage"
+  else NA
+}
+
+# First lets get the variables needed to calcualte validity statistics and make approval/removal decisions
+credibility_wide <- credibility_wide %>%
+  arrange(SubmissionTime) %>%
+  mutate(
+    # check to see if is valid and is a duplicate
+    validity = ifelse(is.na(validity_response), FALSE, (grepl("(4)|(.*four.*)", validity_response, ignore.case = T))),
+    is_duplicate = duplicated(Worker.Id)
+  ) 
+
+
+# Clean up the data a bit. Replace non-answers for gender, location, and education, with NA values
+credibility_pruned <- credibility_wide %>%
+  filter(validity) %>% # remove invalid rows
+  filter(Worker.IsUS %in% c("Yes", "No")) %>%
+  group_by(Worker.Id) %>%
+  arrange(SubmissionTime) %>%
+  filter(n() == 1) %>% # Take only the first response, in the case where the worker added multiple responses
+  ungroup() %>%
+  mutate(
+    # Convert into an ordered factor
+    Worker.Education = ifelse(Worker.Education %in% c("Bachelor", "Master", "Doct", "Professional"), "University+", "Associate-"),
+
+    # Simplify the geneder variable, add an "Other/UNK" variable in the case of non-male and non-female
+    Worker.Gender = factor(ifelse(is.na(Worker.Gender) | Worker.Gender == "", NA, Worker.Gender)),
+    Worker.Gender = factor(ifelse(Worker.Gender %in% c("Male", "Female"), as.character(Worker.Gender), "Other/UNK")),
+    # Convert the worker's age to numeric
+    Worker.Age.Raw = as.numeric(Worker.Age),
+    Worker.Age = as.numeric(Worker.Age) / 10
+  )
+
+# Convert the wide format data into long format, where each worker's responses is saved as a distinct row
+Q1 <- credibility_pruned %>% select(Worker.Id, Q1.Study, Q1.Medium, Q1.Credibility, Q1.Farmiliarity)
+names(Q1) <- c("Worker.Id", "Study", "Medium", "Credibility", "Farmiliarity")
+Q2 <- credibility_pruned %>% select(Worker.Id, Q2.Study, Q2.Medium, Q2.Credibility, Q2.Farmiliarity)
+names(Q2) <- c("Worker.Id", "Study", "Medium", "Credibility", "Farmiliarity")
+Q3 <- credibility_pruned %>% select(Worker.Id, Q3.Study, Q3.Medium, Q3.Credibility, Q3.Farmiliarity)
+names(Q3) <- c("Worker.Id", "Study", "Medium", "Credibility", "Farmiliarity")
+Q4 <- credibility_pruned %>% select(Worker.Id, Q4.Study, Q4.Medium, Q4.Credibility, Q4.Farmiliarity)
+names(Q4) <- c("Worker.Id", "Study", "Medium", "Credibility", "Farmiliarity")
+Q5 <- credibility_pruned %>% select(Worker.Id, Q5.Study, Q5.Medium, Q5.Credibility, Q5.Farmiliarity)
+names(Q5) <- c("Worker.Id", "Study", "Medium", "Credibility", "Farmiliarity")
+
+# 
+credibility_answers <- as.data.table(rbind(Q1, Q2, Q3, Q4, Q5))
+
+# Create a simple dataframe containing relevant worker attributes from the data, linked by the worker ID
+worker_info <- credibility_pruned %>%
+  select(Worker.Id, Worker.Age, Worker.Age.Raw, Worker.IsUS, Worker.Education, Worker.Gender) %>%
+  group_by(Worker.Id) %>%
+  filter(n() == 1)
+
+# Join the worker info onto the long-form response data. 
+survey1_results <- left_join(credibility_answers, worker_info, by = "Worker.Id") %>%
+  filter(!is.na(Credibility)) %>%
+  mutate(
+    Medium = factor(sapply(as.character(Medium), clean_medium_urls)),
+    Study = factor(sapply(as.character(Study), clean_study_urls)),
+    Credibility = as.numeric(Credibility),
+    Familiarity = as.numeric(Farmiliarity),Worker.IsUS = as.factor(Worker.IsUS),
+    Worker.Education = as.factor(Worker.Education)
+  )
+```
+
+
+```{r}
+summary(survey1_results %>% 
+          group_by(Worker.Id) %>%
+          slice(1) %>%
+          ungroup() %>%
+          select(-Worker.Age, -Study, -Medium, -Credibility, -Farmiliarity, -Familiarity))
+```
+
+
+The first thing that we will examine and plot are the model coefficients fitted by the linear regression
+```{r}
+model <- lm(Credibility ~ 
+             Medium +
+             Study + Familiarity + Worker.Education + Worker.Age + Worker.Gender + Worker.IsUS, 
+           data = survey1_results)
+
+broom::tidy(model, conf.int = T)
+
+name_mapping = c(
+  "Mediumblog" = "Platform: Blog",
+  "Mediumnews" = "Platform: News",
+  "Mediumtweet" = "Platform: Tweet",
+  "Mediumyoutube" = "Platform: Video",
+  "Studydogs" = "Topic: Dogs",
+  "Studymarriage" = "Topic: Marriage",
+  "Studysweeteners" = "Topic: Sweeteners",
+  "Studyvitamin" = "Topic: Vitamins",
+  "Familiarity" = "Familiarity",
+  "Worker.EducationUniversity+" = "Education: Univeristy+",
+  "Worker.Age" = "Age",
+  "Worker.GenderMale" = "Gender: Male", 
+  "Worker.GenderOther/UNK" = "Gender: Other/Unk",
+  "Worker.IsUSYes" = "Location: In the U.S."
+)
+
+
+model.tidy <- broom::tidy(model, conf.int = T)
+survey1_reg <- model.tidy %>%
+  mutate(
+    type = ifelse(grepl("Medium", term), "Feature", "Control"),
+    term = as.factor(term),
+    term = reorder(term, estimate),
+    term = plyr::revalue(term, name_mapping)
+  ) %>%
+  filter(term != "(Intercept)") %>%
+  ggplot(aes(x = term, y = estimate, color = type, shape = type)) +
+    geom_point(size = 2.5) +
+    geom_text(aes(label = ifelse(type == "Feature", round(estimate, 2), "")), nudge_x = 0.35, nudge_y = 0, size = 3.2) +
+    coord_flip() +
+    geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.4) +
+    geom_hline(yintercept = 0, color = "darkgrey") +
+    guides(color = F, shape = F) +
+    scale_shape_manual(values = c(1, 19)) +
+    scale_color_manual(values = c("darkgrey", "black")) +
+    labs(title = "A. Model coefficients",
+         y = "Estimate") +
+    theme(axis.title.y = element_blank())
+
+survey1_reg
+```
+
+
+```{r}
+survey1_reg_table <- stargazer(
+  model, 
+  ci = TRUE,
+  covariate.labels = name_mapping,
+  type = "html", 
+  style = "ajs")
+
+write(survey1_reg_table, "survey1_reg_table.html")
+```
+
+
+
+```{r}
+anova_mapping <- c(
+  "Medium" =  "Medium",
+  "Study" = "Study",
+  "Familiarity" = "Familiarity",
+  "Worker.Education" = "Education of respondant",
+  "Worker.Age" = "Age of respondant",
+  "Worker.Gender" = "Gender of respondant",
+  "Worker.IsUS" = "Respondant from U.S."
+)
+
+survey1_anova <- anova(model)
+rownames(survey1_anova) <- plyr::revalue(rownames(survey1_anova), anova_mapping)
+
+survey1_anova_table <- stargazer(survey1_anova, summary = FALSE, type = "html")
+
+write(survey1_anova_table, "survey1_anova_table.html")
+```
+
+First, we demonstrate the differences in terms of the Medium
+```{r}
+survey1_labels <- survey1_results %>%
+  mutate(
+       Medium = factor(Medium, 
+                       levels = c("tweet", "blog", "news", "youtube", "abstract"),
+                       labels = c("Tweet", "Blog", "News", "Video", "Abstract"))
+  ) %>%
+  group_by(Medium) %>%
+  mutate(total = n()) %>%
+  group_by(Medium, Credibility) %>%
+  summarize(
+    prop = n() / total[1]
+  )
+
+survey1_means <- survey1_results %>%
+  mutate(
+       Medium = factor(Medium, 
+                       levels = c("tweet", "blog", "news", "youtube", "abstract"),
+                       labels = c("Tweet", "Blog", "News", "Video", "Abstract"))
+  ) %>%
+  group_by(Medium) %>%
+  summarize(mu = mean(Credibility, na.rm = T))
+
+survey1_dist <- survey1_results %>%
+  filter(!is.na(Credibility)) %>%
+  mutate(Medium = factor(Medium, 
+                         levels = c("tweet", "blog", "news", "youtube", "abstract"),
+                         labels = c("Tweet", "Blog", "News", "Video", "Abstract")),
+         Credibility = as.numeric(Credibility)
+  ) %>%
+  group_by(Medium, Study) %>%
+  mutate(
+    n = n()
+  ) %>%
+  ggplot(aes(x = Medium, y = Credibility, fill = Medium, group = Medium)) +
+    geom_boxplot(color = "black", notch = T) +
+    geom_jitter(width = jitter_width, height = jitter_height, alpha = 0.2,  shape = 21, color = "black") +
+    #geom_text(data = survey1_labels, aes(label = paste0(round(prop * 100, 1), "%")), nudge_x = 0.5) +
+    geom_segment(data = survey1_means, aes(x = as.numeric(Medium) - 0.5, xend = as.numeric(Medium) + 0.5, y = mu, yend = mu), color = "#e74c3c", size = 2) +
+    geom_label(data = survey1_labels, aes(label = paste0(round(prop * 100, 1), "%")), alpha = 0.85, size = 3) +
+    coord_flip() +
+    scale_y_continuous(breaks = c(1, 2, 3, 4, 5, 6, 7)) +  
+    #scale_fill_brewer(palette = "Set2", direction = -1) +
+    scale_fill_manual(values = c("#00aced", "lightgrey", "lightgrey", "lightgrey", "lightgrey")) +
+    labs(
+      title = "B. Credibility by medium",
+      y = "Avg. credibility") +
+    theme(axis.title.y = element_blank(),
+          #axis.title.x = element_blank(),
+          panel.grid.major.y = element_blank()
+    ) 
+
+survey1_dist
+```
+
+
+We can also show how there is heterogeneity by topic
+```{r}
+survey1_dist_all <- survey1_results %>%
+  filter(!is.na(Credibility)) %>%
+  mutate(
+    Medium = factor(Medium, 
+                    levels = rev(c("tweet", "blog", "news", "youtube", "abstract")),
+                    labels = rev(c("Tweet", "Blog", "News", "Video", "Abstract"))),
+    Study = factor(Study, labels = c("Caffeine", "Dogs", "Marraige", "Sweetener", "Vitamins"))
+  ) %>%
+  group_by(Medium, Study) %>%
+  mutate(
+    mu = mean(Credibility)
+  ) %>%
+  ggplot(aes(x = Credibility, fill = Medium)) +
+    geom_bar(stat = "count", alpha = 0.9) +
+    geom_text(aes(label = paste0("~mu", "==", round(mu, 1))), parse = T, y = 55, x = 2.2, size = 2.7) +
+    facet_grid(Medium ~ Study, switch = "y") +
+    geom_vline(aes(xintercept = mu), linetype = "dashed", color = "black") +
+    scale_y_continuous(position = "right", breaks = c(0, 60)) +
+    scale_x_continuous(breaks = c(1, 4, 7)) +  
+    #scale_fill_brewer(palette = "Set2") +
+    scale_fill_manual(values = rev(c("#00aced", "lightgrey", "lightgrey", "lightgrey", "lightgrey"))) +
+    guides(fill = F) +
+    labs(title = "C. Response count by medium and topic") +
+    theme(
+      strip.text.y = element_text(angle = 180),
+      strip.text.x = element_text(size = 10),
+      axis.title.y = element_blank(),
+      axis.text = element_text(size = 10),
+      panel.grid.major.x = element_blank()
+      )
+
+#survey1_dist_all
+```
+
+```{r}
+plots <- list(survey1_dist, survey1_dist_all)
+grobs <- list()
+widths <- list()
+heights <- list()
+
+for (i in 1:length(plots)){
+    grobs[[i]] <- ggplotGrob(plots[[i]])
+    widths[[i]] <- grobs[[i]]$widths[2:5]
+    heights[[i]] <- grobs[[i]]$heights[2:5]
+}
+
+maxwidth <- do.call(grid::unit.pmax, widths)
+maxheight <- do.call(grid::unit.pmax, heights)
+
+
+for (i in 1:length(grobs)){
+     #grobs[[i]]$widths[2:5] <- as.list(maxwidth)
+     grobs[[i]]$heights[2:5] <- as.list(maxheight)
+}
+
+g1 <- do.call("grid.arrange", c(grobs, ncol = 1))
+
+g <- grid.arrange(survey1_reg, g1, ncol = 2)
+ggsave("~/Desktop/survey1_credibility_fig.png", g, width = 10, height = 8)
+```
+
+```{r}
+survey1_dist_vitamin <- survey1_results %>%
+  filter(!is.na(Credibility)) %>%
+  mutate(
+    Medium = factor(Medium, 
+                    levels = rev(c("tweet", "blog", "news", "youtube", "abstract")),
+                    labels = rev(c("Tweet", "Blog", "News", "Video", "Abstract"))),
+    Study = factor(Study, labels = c("Caffeine", "Dogs", "Marraige", "Sweetener", "Vitamins"))
+  ) %>%
+  filter(Study == "Vitamins") %>%
+  group_by(Medium) %>%
+  mutate(
+    mu = mean(Credibility)
+  ) %>%
+  ggplot(aes(x = Credibility, fill = Medium)) +
+    geom_bar(stat = "count", alpha = 0.9) +
+    geom_text(aes(label = paste0("~mu", "==", round(mu, 1))), parse = T, y = 55, x = 2.2, size = 5) +
+    facet_wrap(~Medium, ncol = 1) +
+    geom_vline(aes(xintercept = mu), linetype = "dashed", color = "black") +
+    scale_y_continuous(position = "right", breaks = c(0, 60)) +
+    scale_x_continuous(breaks = c(1, 4, 7)) +  
+    #scale_fill_brewer(palette = "Set2") +
+    scale_fill_manual(values = rev(c("lightgrey", "lightgrey", "lightgrey", "lightgrey", "red"))) +
+    guides(fill = F) +
+    #labs(title = "C. Response count by medium and topic") +
+    theme(
+      strip.text.y = element_text(angle = 180),
+      strip.text.x = element_text(size = 10),
+      axis.title.y = element_blank(),
+      axis.text = element_text(size = 12),
+      panel.grid.major.x = element_blank()
+      )
+
+survey1_dist_vitamin
+ggsave("~/Desktop/survey1_vitamin_plot.png", survey1_dist_vitamin, width = 5, height = 8)
+```
+
+
+```{r}
+survey1_labels <- survey1_results %>%
+  mutate(
+       Study = factor(Study, 
+                      levels = rev(c("sweeteners", "caffeine", "vitamin", "marriage", "dogs")),
+                      labels = rev(c("Sweetener", "Caffeine", "Vitamins", "Marriage", "Dogs"))
+                      )
+  ) %>%
+  group_by(Study) %>%
+  mutate(total = n()) %>%
+  group_by(Study, Credibility) %>%
+  summarize(
+    prop = n() / total[1]
+  )
+
+survey1_means <- survey1_results %>%
+  mutate(
+       Study = factor(Study, 
+                      levels = rev(c("sweeteners", "caffeine", "vitamin", "marriage", "dogs")),
+                      labels = rev(c("Sweetener", "Caffeine", "Vitamins", "Marriage", "Dogs"))
+                      )
+  ) %>%
+  group_by(Study) %>%
+  summarize(mu = mean(Credibility, na.rm = T))
+
+survey1_dist <- survey1_results %>%
+  filter(!is.na(Credibility)) %>%
+  mutate(
+    Study = factor(Study, 
+                      levels = rev(c("sweeteners", "caffeine", "vitamin", "marriage", "dogs")),
+                      labels = rev(c("Sweetener", "Caffeine", "Vitamins", "Marriage", "Dogs"))
+                      ),
+    Credibility = as.numeric(Credibility)
+  ) %>%
+  group_by(Study) %>%
+  mutate(
+    n = n()
+  ) %>%
+  ggplot(aes(x = Study, y = Credibility, fill = Study, group = Study)) +
+    geom_boxplot(color = "black", notch = T) +
+    geom_jitter(width = jitter_width, height = jitter_height, alpha = 0.2,  shape = 21, color = "black") +
+    #geom_text(data = survey1_labels, aes(label = paste0(round(prop * 100, 1), "%")), nudge_x = 0.5) +
+    geom_segment(data = survey1_means, aes(x = as.numeric(Study) - 0.5, xend = as.numeric(Study) + 0.5, y = mu, yend = mu), color = "#e74c3c", size = 2) +
+    geom_label(data = survey1_labels, aes(label = paste0(round(prop * 100, 1), "%")), alpha = 0.85, size = 3) +
+    coord_flip() +
+    scale_y_continuous(breaks = c(1, 2, 3, 4, 5, 6, 7)) +  
+    scale_fill_brewer(palette = "Set2", direction = -1) +
+    #scale_fill_manual(values = c("#00aced", "lightgrey", "lightgrey", "lightgrey", "lightgrey")) +
+    labs(
+      y = "Avg. credibility") +
+    theme(axis.title.y = element_blank(),
+          #axis.title.x = element_blank(),
+          panel.grid.major.y = element_blank()
+    ) 
+
+survey1_dist
+```

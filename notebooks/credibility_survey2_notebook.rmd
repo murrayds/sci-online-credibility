@@ -1,0 +1,460 @@
+---
+title: "Credibility: Survey 2 Analysis"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(grid)
+library(gridExtra)
+library(stargazer)
+
+
+theme_credibility <- theme_minimal() + 
+  theme(plot.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        legend.position = "none")
+
+theme_set(theme_credibility)
+
+boxplot_width = 0.7
+jitter_width = 0.28
+jitter_height = 0.25
+jitter_alpha = 0.2
+
+prop_text_size = 2.8
+```
+
+```{r}
+
+# Update these dropbox links to point to your own path
+survey2_results_path <- "~/Dropbox/credibility/Data/New/results_bothRoundsCombined_validationFailsRemoved_art8redosadded.csv"
+tweets_guide_path <- "~/Dropbox/credibility/Data/New/codebook/tweetsGuide.csv"
+
+# Load the data
+survey2_results <- readr::read_csv(survey2_results_path, col_types = readr::cols())
+tweetsGuide <- readr::read_csv(tweets_guide_path, col_types = readr::cols())
+
+
+survey2_cleaned <- survey2_results %>%
+  tidyr::gather(input, link, 29:42) %>%
+  group_by(HITId, input) %>%
+  mutate(
+    input.num = as.numeric(strsplit(input, ".", fixed = T)[[1]][2]),
+    Answer.Credibility = switch(input.num, 
+                   Answer.Q1Credibility, 
+                   Answer.Q2Credibility, 
+                   Answer.Q3Credibility, 
+                   Answer.Q4Credibility, 
+                   Answer.Q5Credibility, 
+                   Answer.Q6Credibility,
+                   Answer.Q7Credibility,
+                   Answer.Q8Credibility,
+                   Answer.Q9Credibility,
+                   Answer.Q10Credibility,
+                   Answer.Q11Credibility,
+                   Answer.Q12Credibility,
+                   Answer.Q13Credibility,
+                   Answer.Q14Credibility)
+  ) %>%
+  ungroup() %>%
+  select(HITId, input, link, Answer.Age, Answer.Education, Answer.Gender, Answer.US, Answer.Credibility) %>%
+  left_join(tweetsGuide, by = c("link" = "http")) %>%
+  mutate(reception = as.factor(reception),
+         topic = as.factor(topic),
+         Answer.Age = Answer.Age / 10,
+         Answer.Gender = as.factor(Answer.Gender),
+         Answer.Education = as.factor(Answer.Education),
+         Answer.US = as.factor(Answer.US),
+         Title = factor(Title, levels = c("Title", "Neutral paraphrase", "Positive paraphrase")),
+         Answer.Education = ifelse(Answer.Education %in% c("Bachelor", "Master", "Doct", "Professional"), "University+", "Associate-"),
+         visual = factor(visual, levels = c("no visual", "chart from paper", "screenshot of abstract"))
+         )
+```
+
+```{r}
+summary(survey2_cleaned %>%
+          group_by(HITId) %>%
+          slice(1) %>%
+          ungroup() %>%
+          select(Answer.Age, Answer.Education, Answer.Gender, Answer.US) %>%
+          mutate(
+            Answer.Age = Answer.Age * 10,
+            Answer.Education = as.factor(Answer.Education)
+          )
+        )
+
+```
+
+First we construct the visualization of the regression coefficients
+```{r}
+model <- lm(Answer.Credibility ~ 
+              ownership + visual + reception + Title + # feature variables
+              topic + Answer.Gender + Answer.Education + Answer.US + Answer.Age, #control variables
+            survey2_cleaned)
+
+broom::tidy(model, conf.int = T)
+
+name_mapping = c(
+  "ownershipownership" = "Author claims ownership",
+  "visualchart from paper" = "Visual: Chart from paper",
+  "visualscreenshot of abstract" = "Visual: Screenshot of abstract",
+  "reception2" = "Reception: Medium",
+  "reception3" = "Reception: High",
+  "TitlePositive paraphrase" = "Title: Positive Paraphrase",
+  "TitleNeutral paraphrase" = "Title: Neutral Paraphrase",
+  "topic2" = "Topic 2",
+  "topic3" = "Topic 3",
+  "topic4" = "Topic 4",
+  "topic5" = "Topic 5",
+  "topic6" = "Topic 6",
+  "topic7" = "Topic 7",
+  "topic8" = "Topic 8", 
+  "topic9" = "Topic 9",
+  "topic10" = "Topic 10",
+  "topic11" = "Topic 11",
+  "topic12" = "Topic 12",
+  "topic13" = "Topic 13",
+  "topic14" = "Topic 14",
+  "Answer.GenderMale" = "Gender: Male",
+  "Answer.EducationUniversity+" = "Education: Univeristy+",
+  "Answer.USYes" = "Location: In the U.S.",
+  "Answer.Age" = "Age"
+)
+
+# Convert to a tidy model
+model.tidy <- broom::tidy(model, conf.int = T)
+
+# Now construct the regression plot from the tidy model
+survey2_reg <- model.tidy %>%
+  mutate(type = ifelse(grepl("topic",term), "Control", ifelse(grepl("Answer",term), "Control", "Feature")),
+         term = as.factor(term),
+         term = reorder(term, estimate),
+         term = plyr::revalue(term, name_mapping)
+        ) %>%
+  filter(term != "(Intercept)") %>%
+  ggplot(aes(x = term, y = estimate, color = type, shape = type)) +
+    geom_point(size = 2.5) +
+    # Only plot the values for feature variables
+    geom_text(aes(label = ifelse(type == "Feature", round(estimate, 2), "")), nudge_x = 0.4, size = 3.5) +
+    geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.4) +
+    geom_hline(yintercept = 0, color = "darkgrey") +
+    coord_flip() + # flip horizontally
+    scale_shape_manual(values = c(1, 19)) +
+    scale_color_manual(values = c("darkgrey", "black")) + 
+    guides(color = F) +
+    labs(title = "A. Model coefficients",
+         y = "Estimate") +
+    theme(
+      axis.title.y = element_blank()
+    ) 
+
+survey2_reg
+```
+
+The regression table should also be provided. Here we will create a regression table using the stargazer package. 
+
+To insert this into microsoft word, open the "survey2_table.html" file in a web brower and copy it from there into the document
+```{r}
+survey2_table <- stargazer(
+  model, 
+  ci = TRUE,
+  covariate.labels = name_mapping,
+  type = "html")
+
+write(survey2_table, "survey2_reg_table.html")
+```
+
+Similarly, we will also output the ANOVA table of the model using stargazer and the same procedure to bring into a microwoft word document. 
+```{r}
+anova_mapping <- c(
+  "ownership" =  "Claim of ownership",
+  "reception" = "Reception",
+  "visual" = "Presence of visual",
+  "Title" = "Title phrasing",
+  "topic" = "Topic of paper",
+  "Answer.Gender" = "Gender of respondant",
+  "Answer.Education" = "Education of respondant",
+  "Answer.US" = "Respondant from U.S.",
+  "Answer.Age" = "Respondant age"
+)
+
+survey2_anova <- anova(model)
+rownames(survey2_anova) <- plyr::revalue(rownames(survey2_anova), anova_mapping)
+
+survey2_anova_table <- stargazer(survey2_anova, summary = FALSE, type = "html")
+
+write(survey2_anova_table, "survey2_anova_table.html")
+```
+
+Next we will create bar charts that will be displayed alongside the regression visualization. There will be a total of four charts, one for each of the feature variables. 
+```{r}
+survey2_visual_labels <- survey2_cleaned %>%
+  mutate(
+        visual = as.factor(visual),
+        visual = plyr::revalue(visual, 
+                           c("no visual" = "No Visual", 
+                             "chart from paper" = "Chart from\nPaper", 
+                             "screenshot of abstract" = "Screenshot\nof Abstract"))
+  ) %>%
+  group_by(visual) %>%
+  mutate(total = n()) %>%
+  group_by(visual, Answer.Credibility) %>%
+  summarize(
+    prop = n() / total[1]
+  )
+
+survey2_visual_means <- survey2_cleaned %>%
+  mutate(
+        visual = as.factor(visual),
+        visual = plyr::revalue(visual, 
+                           c("no visual" = "No Visual", 
+                             "chart from paper" = "Chart from\nPaper", 
+                             "screenshot of abstract" = "Screenshot\nof Abstract"))
+  ) %>%
+  group_by(visual) %>%
+  summarize(mu = mean(Answer.Credibility, na.rm = T))
+
+
+survey2_visual <- survey2_cleaned %>%
+  mutate(
+    visual = as.factor(visual),
+    visual = plyr::revalue(visual, 
+                           c("no visual" = "No Visual", 
+                             "chart from paper" = "Chart from\nPaper", 
+                             "screenshot of abstract" = "Screenshot\nof Abstract"))
+  ) %>%
+  ggplot(aes(x = visual, y = Answer.Credibility, fill = visual)) +
+    geom_boxplot(color = "black", width = boxplot_width, notch = T) +
+    geom_jitter(width = jitter_width, height = jitter_height, alpha = jitter_alpha, shape = 21) +
+    geom_segment(data = survey2_visual_means, aes(x = as.numeric(visual) - 0.5, xend = as.numeric(visual) + 0.5, y = mu, yend = mu), color = "#e74c3c", size = 2) +
+    geom_label(data = survey2_visual_labels, aes(label = paste0(round(prop * 100, 1), "%")), alpha = 0.85, size = prop_text_size) +
+    coord_flip(ylim = c(0.7, 7.3), expand = TRUE) +
+    scale_y_continuous(breaks = c(1, 2, 3, 4, 5, 6, 7)) +  
+    labs(y = "Avg. Credibility",
+         title = "B. Presence of visual") +
+    scale_fill_brewer(palette = "Greens") +
+    guides(fill = F) +
+    theme(axis.title.y = element_blank(),
+          axis.title.x = element_blank(),
+          panel.grid.major.y = element_blank(),
+          panel.grid.minor.x = element_blank()
+          ) 
+
+survey2_visual
+```
+
+```{r}
+survey2_ownership_labels <- survey2_cleaned %>%
+  mutate(
+        ownership = factor(ownership),
+        ownership = plyr::revalue(ownership, 
+                                  c("no ownership" = "No Ownership\nClaimed", 
+                                    "ownership" = "Author Claims\nOwnership"))
+  ) %>%
+  group_by(ownership) %>%
+  mutate(total = n()) %>%
+  group_by(ownership, Answer.Credibility) %>%
+  summarize(
+    prop = n() / total[1]
+  )
+
+survey2_ownership_means <- survey2_cleaned %>%
+  mutate(
+        ownership = factor(ownership),
+        ownership = plyr::revalue(ownership, 
+                                  c("no ownership" = "No Ownership\nClaimed", 
+                                    "ownership" = "Author Claims\nOwnership"))
+  ) %>%
+  group_by(ownership) %>%
+  summarize(mu = mean(Answer.Credibility, na.rm = T))
+
+survey2_ownership <- survey2_cleaned %>%
+  #rowwise() %>%
+  mutate(
+    ownership = factor(ownership),
+    ownership = plyr::revalue(ownership, 
+                              c("no ownership" = "No Ownership\nClaimed", 
+                                "ownership" = "Author Claims\nOwnership"))
+  ) %>%
+  ggplot(aes(x = ownership, y = Answer.Credibility, fill = ownership)) +
+    geom_boxplot(color = "black", width = boxplot_width, notch = T) +
+    geom_jitter(width = jitter_width, height = jitter_height, alpha = jitter_alpha, shape = 21) +
+    geom_segment(data = survey2_ownership_means, aes(x = as.numeric(ownership) - 0.5, xend = as.numeric(ownership) + 0.5, y = mu, yend = mu), color = "#e74c3c", size = 2) +
+    geom_label(data = survey2_ownership_labels, aes(label = paste0(round(prop * 100, 1), "%")), alpha = 0.85, size = prop_text_size) +
+    coord_flip(ylim = c(0.7, 7.3), expand = TRUE) +
+    scale_y_continuous(breaks = c(1, 2, 3, 4, 5, 6, 7)) +  
+    labs(y = "Avg. Credibility",
+         title = "D. Claim of ownership") +
+    scale_fill_brewer(palette = "Blues") +
+    guides(fill = F) +
+    theme(axis.title.y = element_blank(),
+          axis.title.x = element_blank(),
+          panel.grid.major.y = element_blank(),
+          panel.grid.minor.x = element_blank()
+          ) 
+
+survey2_ownership
+```
+
+```{r}
+survey2_title_labels <- survey2_cleaned %>%
+  mutate(
+        Title = factor(Title, 
+                       levels = c("Title", "Neutral paraphrase", "Positive paraphrase"),
+                       labels = c("Not\nParaphrased", "Neutral\nParaphrase", "Positive\nParaphrase"))
+  ) %>%
+  group_by(Title) %>%
+  mutate(total = n()) %>%
+  group_by(Title, Answer.Credibility) %>%
+  summarize(
+    prop = n() / total[1]
+  )
+
+survey2_title_means <- survey2_cleaned %>%
+  mutate(
+        Title = factor(Title, 
+                       levels = c("Title", "Neutral paraphrase", "Positive paraphrase"),
+                       labels = c("Not\nParaphrased", "Neutral\nParaphrase", "Positive\nParaphrase"))
+  ) %>%
+  group_by(Title) %>%
+  summarize(mu = mean(Answer.Credibility, na.rm = T))
+
+survey2_title <- survey2_cleaned %>%
+  mutate(
+    Title = factor(Title, 
+                   levels = c("Title", "Neutral paraphrase", "Positive paraphrase"),
+                   labels = c("Not\nParaphrased", "Neutral\nParaphrase", "Positive\nParaphrase"))
+  ) %>%
+  ggplot(aes(x = Title, y = Answer.Credibility, fill = Title)) +
+    geom_boxplot(color = "black", width = boxplot_width, notch = T) +
+    geom_jitter(width = jitter_width, height = jitter_height, alpha = jitter_alpha, shape = 21) +
+    geom_segment(data = survey2_title_means, aes(x = as.numeric(Title) - 0.5, xend = as.numeric(Title) + 0.5, y = mu, yend = mu), color = "#e74c3c", size = 2) +
+    geom_label(data = survey2_title_labels, aes(label = paste0(round(prop * 100, 1), "%")), alpha = 0.85, size = prop_text_size) +
+    coord_flip(ylim = c(0.7, 7.3), expand = TRUE) +
+    scale_y_continuous(breaks = c(1, 2, 3, 4, 5, 6, 7)) +  
+    labs(y = "Avg. Credibility",
+         title = "C. Title phrasing") +
+    scale_fill_brewer(palette = "Purples") +
+    guides(fill = F) +
+    theme(axis.title.y = element_blank(),
+          axis.title.x = element_blank(),
+          panel.grid.major.y = element_blank(),
+          panel.grid.minor.x = element_blank()
+          ) 
+    
+survey2_title
+```
+
+
+```{r}
+survey2_reception_labels <- survey2_cleaned %>%
+  mutate(
+        reception = factor(reception, labels = c("Low", "Moderate", "High"))
+  ) %>%
+  group_by(reception) %>%
+  mutate(total = n()) %>%
+  group_by(reception, Answer.Credibility) %>%
+  summarize(
+    prop = n() / total[1]
+  )
+
+survey2_reception_means <- survey2_cleaned %>%
+ mutate(
+        reception = factor(reception, labels = c("Low", "Moderate", "High"))
+  ) %>%
+  group_by(reception) %>%
+  summarize(mu = mean(Answer.Credibility, na.rm = T))
+
+
+survey2_reception <- survey2_cleaned %>%
+  mutate(
+    reception = factor(reception, labels = c("Low", "Moderate", "High"))
+  ) %>%
+  ggplot(aes(x = reception, y = Answer.Credibility, fill = reception)) +
+    geom_boxplot(color = "black", width = boxplot_width, notch = T) +
+    geom_jitter(width = jitter_width, height = jitter_height, alpha = jitter_alpha, shape = 21) +
+    geom_segment(data = survey2_reception_means, aes(x = as.numeric(reception) - 0.5, xend = as.numeric(reception) + 0.5, y = mu, yend = mu), color = "#e74c3c", size = 2) +
+    geom_label(data = survey2_reception_labels, aes(label = paste0(round(prop * 100, 1), "%")), alpha = 0.85, size = prop_text_size) +
+    coord_flip(ylim = c(0.7, 7.3), expand = TRUE) +
+    scale_y_continuous(breaks = c(1, 2, 3, 4, 5, 6, 7)) +  
+    labs(y = "Avg. credibility",
+         title = "E. Reception") +
+    scale_fill_brewer(palette = "Oranges") +
+    guides(fill = F) +
+    theme(axis.title.y = element_blank(),
+          panel.grid.major.y = element_blank(),
+          panel.grid.minor.x = element_blank()
+          ) 
+    
+survey2_reception
+```
+
+
+Now that each of the graphs have been created, we can combine them into a single figure
+```{r}
+plots <- list(survey2_visual, survey2_title, survey2_ownership, survey2_reception)
+grobs <- list()
+widths <- list()
+heights <- list()
+
+for (i in 1:length(plots)){
+    grobs[[i]] <- ggplotGrob(plots[[i]])
+    widths[[i]] <- grobs[[i]]$widths[2:5]
+    heights[[i]] <- grobs[[i]]$heights[2:5]
+}
+
+maxwidth <- do.call(grid::unit.pmax, widths)
+maxheight <- do.call(grid::unit.pmax, heights)
+
+for (i in 1:length(grobs)){
+     grobs[[i]]$widths[2:5] <- as.list(maxwidth)
+     grobs[[i]]$heights[2:5] <- as.list(maxheight)
+}
+
+g1 <- do.call("grid.arrange", c(grobs, ncol = 1))
+
+g <- grid.arrange(survey2_reg, g1, ncol = 2)
+ggsave("~/Desktop/survey2_credibility_fig.png", g, width = 9, height = 9)
+```
+
+```{r}
+survey2_topic_labels <- survey2_cleaned %>%
+  group_by(topic) %>%
+  mutate(total = n()) %>%
+  group_by(topic, Answer.Credibility) %>%
+  summarize(
+    prop = n() / total[1]
+  )
+
+survey2_topic_means <- survey2_cleaned %>%
+  group_by(topic) %>%
+  summarize(mu = mean(Answer.Credibility, na.rm = T))
+
+
+survey2_topic <- survey2_cleaned %>%
+  ggplot(aes(x = topic, y = Answer.Credibility)) +
+    geom_boxplot(color = "black", width = boxplot_width, notch = T) +
+    geom_jitter(width = jitter_width, height = jitter_height, alpha = jitter_alpha, shape = 21) +
+    geom_segment(data = survey2_topic_means, aes(x = as.numeric(topic) - 0.5, xend = as.numeric(topic) + 0.5, y = mu, yend = mu), color = "#e74c3c", size = 2) +
+    geom_label(data = survey2_topic_labels, aes(label = paste0(round(prop * 100, 1), "%")), alpha = 0.85, size = prop_text_size) +
+    coord_flip(ylim = c(0.7, 7.3), expand = TRUE) +
+    scale_y_continuous(breaks = c(1, 2, 3, 4, 5, 6, 7)) +  
+    labs(
+      x = "Topic",
+      y = "Avg. credibility") +
+    #scale_fill_brewer(palette = "Greens") +
+    guides(fill = F) +
+    theme(
+          panel.grid.major.y = element_blank(),
+          panel.grid.minor.x = element_blank()
+          ) 
+
+survey2_topic
+ggsave("~/Desktop/credibility_topic_boxplots.png", survey2_topic, width = 5, height = 8)
+```
