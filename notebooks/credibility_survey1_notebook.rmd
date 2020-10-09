@@ -14,6 +14,7 @@ library(data.table)
 library(grid)
 library(gridExtra)
 library(stargazer)
+library(lme4)
 
 theme_credibility <- theme_minimal() + 
   theme(plot.title = element_text(size = 14, face = "bold"),
@@ -174,12 +175,11 @@ summary(survey1_results %>%
 
 The first thing that we will examine and plot are the model coefficients fitted by the linear regression
 ```{r}
-model <- lm(Credibility ~ 
+model <- lmer(Credibility ~
              Medium +
-             Study + Familiarity + Worker.Education + Worker.Age + Worker.Gender + Worker.IsUS, 
+             Study + Familiarity + Worker.Education + Worker.Age + Worker.Gender + Worker.IsUS +
+               (1|Worker.Id),
            data = survey1_results)
-
-broom::tidy(model, conf.int = T)
 
 name_mapping = c(
   "Mediumblog" = "Platform: Blog",
@@ -195,7 +195,9 @@ name_mapping = c(
   "Worker.Age" = "Age",
   "Worker.GenderMale" = "Gender: Male", 
   "Worker.GenderOther/UNK" = "Gender: Other/Unk",
-  "Worker.IsUSYes" = "Location: In the U.S."
+  "Worker.IsUSYes" = "Location: In the U.S.",
+  "sd_(Intercept).Worker.Id" = "SD(Worker ID)",
+  "sd_Observation.Residual" = "SD(Obs. residual)"
 )
 
 
@@ -219,7 +221,9 @@ survey1_reg <- model.tidy %>%
     scale_color_manual(values = c("darkgrey", "black")) +
     labs(title = "A. Model coefficients",
          y = "Estimate") +
-    theme(axis.title.y = element_blank())
+    theme(
+      axis.title.y = element_blank(),
+    )
 
 survey1_reg
 ```
@@ -235,7 +239,6 @@ survey1_reg_table <- stargazer(
 
 write(survey1_reg_table, "survey1_reg_table.html")
 ```
-
 
 
 ```{r}
@@ -307,7 +310,7 @@ survey1_dist <- survey1_results %>%
       y = "Avg. credibility") +
     theme(axis.title.y = element_blank(),
           #axis.title.x = element_blank(),
-          panel.grid.major.y = element_blank()
+          panel.grid.major.y = element_blank())
     ) 
 
 survey1_dist
@@ -347,7 +350,7 @@ survey1_dist_all <- survey1_results %>%
       panel.grid.major.x = element_blank()
       )
 
-#survey1_dist_all
+survey1_dist_all
 ```
 
 ```{r}
