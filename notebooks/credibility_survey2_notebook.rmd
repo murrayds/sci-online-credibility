@@ -12,6 +12,7 @@ library(tidyverse)
 library(grid)
 library(gridExtra)
 library(stargazer)
+library(lme4)
 
 
 theme_credibility <- theme_minimal() + 
@@ -33,8 +34,10 @@ prop_text_size = 2.8
 ```{r}
 
 # Update these dropbox links to point to your own path
-survey2_results_path <- "~/Dropbox/credibility/Data/New/results_bothRoundsCombined_validationFailsRemoved_art8redosadded.csv"
-tweets_guide_path <- "~/Dropbox/credibility/Data/New/codebook/tweetsGuide.csv"
+# survey2_results_path <- "~/Dropbox/credibility/Data/New/results_bothRoundsCombined_validationFailsRemoved_art8redosadded.csv"
+# tweets_guide_path <- "~/Dropbox/credibility/Data/New/codebook/tweetsGuide.csv"
+survey2_results_path <- "../data/survey2/results_bothRoundsCombined_validationFailsRemoved_art8redosadded.csv"
+tweets_guide_path <- "../data/survey2/codebook/tweetsGuide.csv"
 
 # Load the data
 survey2_results <- readr::read_csv(survey2_results_path, col_types = readr::cols())
@@ -93,11 +96,29 @@ summary(survey2_cleaned %>%
 
 First we construct the visualization of the regression coefficients
 ```{r}
-model <- lm(Answer.Credibility ~ 
+### original linear model ###
+
+# model <- lm(Answer.Credibility ~
+#               ownership + visual + reception + Title + # feature variables
+#               topic + Answer.Gender + Answer.Education + Answer.US + Answer.Age, #control variables
+#             survey2_cleaned)
+
+#############################
+
+### new mixed effect model ### 
+
+model <- lmer(Answer.Credibility ~
               ownership + visual + reception + Title + # feature variables
-              topic + Answer.Gender + Answer.Education + Answer.US + Answer.Age, #control variables
+              topic + Answer.Gender + Answer.Education + Answer.US + Answer.Age + #control variables
+              (1|HITId),
+
             survey2_cleaned)
 
+##############################
+```
+
+
+```{r}
 broom::tidy(model, conf.int = T)
 
 name_mapping = c(
@@ -137,7 +158,7 @@ survey2_reg <- model.tidy %>%
          term = reorder(term, estimate),
          term = plyr::revalue(term, name_mapping)
         ) %>%
-  filter(term != "(Intercept)") %>%
+  filter(term != "(Intercept)"& term != "sd_(Intercept).HITId" & term != "sd_Observation.Residual") %>%
   ggplot(aes(x = term, y = estimate, color = type, shape = type)) +
     geom_point(size = 2.5) +
     # Only plot the values for feature variables
@@ -157,6 +178,29 @@ survey2_reg <- model.tidy %>%
 survey2_reg
 ```
 
+check residual plots 
+```{r}
+
+model.resid = resid(model)
+model.fitted = fitted(model)
+model_test = data.frame(model.resid, model.fitted)
+
+ggplot(model_test, aes(x=model.fitted, y=model.resid)) + geom_point() + geom_smooth(method = "loess")
+
+```
+
+```{r}
+
+# ranef(model)
+
+reaction_subject <- fixef(model) + ranef(model)$HITId
+reaction_subject$Subject<-rownames(reaction_subject)
+names(reaction_subject)[1]<-"Intercept"
+reaction_subject <- reaction_subject[,c(2,1)]
+#plot
+ggplot(reaction_subject,aes(x=Subject,y=Intercept))+geom_point() + geom_smooth(method="lm")
+
+```
 The regression table should also be provided. Here we will create a regression table using the stargazer package. 
 
 To insert this into microsoft word, open the "survey2_table.html" file in a web brower and copy it from there into the document
@@ -420,7 +464,9 @@ for (i in 1:length(grobs)){
 g1 <- do.call("grid.arrange", c(grobs, ncol = 1))
 
 g <- grid.arrange(survey2_reg, g1, ncol = 2)
-ggsave("~/Desktop/survey2_credibility_fig.png", g, width = 9, height = 9)
+# ggsave("~/Desktop/survey2_credibility_fig.png", g, width = 9, height = 9)
+ggsave("survey2_credibility_fig.png", g, width = 9, height = 9)
+ggsave("survey2_credibility_fig.pdf", g, width = 9, height = 9)
 ```
 
 ```{r}
@@ -456,5 +502,6 @@ survey2_topic <- survey2_cleaned %>%
           ) 
 
 survey2_topic
+# ggsave("~/Desktop/credibility_topic_boxplots.png", survey2_topic, width = 5, height = 8)
 ggsave("~/Desktop/credibility_topic_boxplots.png", survey2_topic, width = 5, height = 8)
 ```

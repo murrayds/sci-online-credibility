@@ -14,6 +14,7 @@ library(data.table)
 library(grid)
 library(gridExtra)
 library(stargazer)
+library(lme4)
 
 theme_credibility <- theme_minimal() + 
   theme(plot.title = element_text(size = 14, face = "bold"),
@@ -31,7 +32,8 @@ jitter_alpha = 0.3
 
 
 ```{r}
-credibilityAll <- read.csv("~/Dropbox/Credibility/Data/Old/credibilityDATA.csv", stringsAsFactors = F)
+# credibilityAll <- read.csv("~/Dropbox/Credibility/Data/Old/credibilityDATA.csv", stringsAsFactors = F)
+credibilityAll <- read.csv("../data/survey1/credibilityDATA.csv", stringsAsFactors = F)
  
 
 relevant_fields <- c("Input.Source1Text",	"Input.Source2Text",	"Input.Source3Text", 
@@ -174,11 +176,30 @@ summary(survey1_results %>%
 
 The first thing that we will examine and plot are the model coefficients fitted by the linear regression
 ```{r}
-model <- lm(Credibility ~ 
+### original linear model ###
+
+# model <- lm(Credibility ~
+#              Medium +
+#              Study + Familiarity + Worker.Education + Worker.Age + Worker.Gender + Worker.IsUS,
+#            data = survey1_results)
+
+#############################
+
+### new mixed effect model ### 
+
+model <- lmer(Credibility ~
              Medium +
-             Study + Familiarity + Worker.Education + Worker.Age + Worker.Gender + Worker.IsUS, 
+             Study + Familiarity + Worker.Education + Worker.Age + Worker.Gender + Worker.IsUS +
+               (1|Worker.Id),
            data = survey1_results)
 
+summary(model)
+
+##############################
+```
+
+
+```{r}
 broom::tidy(model, conf.int = T)
 
 name_mapping = c(
@@ -207,7 +228,7 @@ survey1_reg <- model.tidy %>%
     term = reorder(term, estimate),
     term = plyr::revalue(term, name_mapping)
   ) %>%
-  filter(term != "(Intercept)") %>%
+  filter(term != "(Intercept)" & term != "sd_(Intercept).Worker.Id" & term != "sd_Observation.Residual") %>%
   ggplot(aes(x = term, y = estimate, color = type, shape = type)) +
     geom_point(size = 2.5) +
     geom_text(aes(label = ifelse(type == "Feature", round(estimate, 2), "")), nudge_x = 0.35, nudge_y = 0, size = 3.2) +
@@ -217,11 +238,37 @@ survey1_reg <- model.tidy %>%
     guides(color = F, shape = F) +
     scale_shape_manual(values = c(1, 19)) +
     scale_color_manual(values = c("darkgrey", "black")) +
-    labs(title = "A. Model coefficients",
+    labs(title = "A. Model coefficients, Survey 1",
          y = "Estimate") +
     theme(axis.title.y = element_blank())
 
 survey1_reg
+```
+check residual plots 
+```{r}
+
+
+model.resid = resid(model)
+model.fitted = fitted(model)
+model_test = data.frame(model.resid, model.fitted)
+
+
+ggplot(model_test, aes(x=model.fitted, y=model.resid)) + geom_point() + geom_smooth(method = "loess")+
+  ggtitle("residual fit, survey 1")
+
+```
+
+```{r}
+
+ranef.thing = ranef(model)
+
+reaction_subject <- fixef(model) + ranef(model)$Worker.Id
+reaction_subject$Subject<-rownames(reaction_subject)
+names(reaction_subject)[1]<-"Intercept"
+reaction_subject <- reaction_subject[,c(2,1)]
+#plot
+ggplot(reaction_subject,aes(x=Subject,y=Intercept))+geom_point() + geom_smooth(method="lm")
+
 ```
 
 
@@ -374,7 +421,7 @@ for (i in 1:length(grobs)){
 g1 <- do.call("grid.arrange", c(grobs, ncol = 1))
 
 g <- grid.arrange(survey1_reg, g1, ncol = 2)
-ggsave("~/Desktop/survey1_credibility_fig.png", g, width = 10, height = 8)
+ggsave("survey1_credibility_fig.pdf", g, width = 10, height = 8)
 ```
 
 ```{r}
