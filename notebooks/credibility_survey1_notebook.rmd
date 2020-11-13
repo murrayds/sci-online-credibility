@@ -15,6 +15,7 @@ library(grid)
 library(gridExtra)
 library(stargazer)
 library(lme4)
+library(MuMIn)
 
 theme_credibility <- theme_minimal() + 
   theme(plot.title = element_text(size = 14, face = "bold"),
@@ -194,6 +195,7 @@ model <- lmer(Credibility ~
            data = survey1_results)
 
 summary(model)
+r.squaredGLMM(model)
 
 ##############################
 ```
@@ -299,7 +301,7 @@ anova_mapping <- c(
 survey1_anova <- anova(model)
 rownames(survey1_anova) <- plyr::revalue(rownames(survey1_anova), anova_mapping)
 
-survey1_anova_table <- stargazer(survey1_anova, summary = FALSE, type = "html")
+survey1_anova_table <- stargazer(survey1_anova, summary = TRUE, type = "html")
 
 write(survey1_anova_table, "survey1_anova_table.html")
 ```

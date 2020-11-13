@@ -13,7 +13,7 @@ library(grid)
 library(gridExtra)
 library(stargazer)
 library(lme4)
-
+library(MuMIn)
 
 theme_credibility <- theme_minimal() + 
   theme(plot.title = element_text(size = 14, face = "bold"),
@@ -113,6 +113,9 @@ model <- lmer(Answer.Credibility ~
               (1|HITId),
 
             survey2_cleaned)
+
+summary(model)
+r.squaredGLMM(model)
 
 ##############################
 ```
