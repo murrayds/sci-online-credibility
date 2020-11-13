@@ -143,7 +143,7 @@ name_mapping = c(
   "topic13" = "Topic 13",
   "topic14" = "Topic 14",
   "Answer.GenderMale" = "Gender: Male",
-  "Answer.EducationUniversity+" = "Education: Univeristy+",
+  "Answer.EducationUniversity+" = "Education: University+",
   "Answer.USYes" = "Location: In the U.S.",
   "Answer.Age" = "Age"
 )
