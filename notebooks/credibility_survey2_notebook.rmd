@@ -96,22 +96,11 @@ summary(survey2_cleaned %>%
 
 First we construct the visualization of the regression coefficients
 ```{r}
-### original linear model ###
-
-# model <- lm(Answer.Credibility ~
-#               ownership + visual + reception + Title + # feature variables
-#               topic + Answer.Gender + Answer.Education + Answer.US + Answer.Age, #control variables
-#             survey2_cleaned)
-
-#############################
-
-### new mixed effect model ### 
 
 model <- lmer(Answer.Credibility ~
               ownership + visual + reception + Title + # feature variables
               topic + Answer.Gender + Answer.Education + Answer.US + Answer.Age + #control variables
               (1|HITId),
-
             survey2_cleaned)
 
 summary(model)
@@ -148,7 +137,9 @@ name_mapping = c(
   "Answer.GenderMale" = "Gender: Male",
   "Answer.EducationUniversity+" = "Education: University+",
   "Answer.USYes" = "Location: In the U.S.",
-  "Answer.Age" = "Age"
+  "Answer.Age" = "Age",
+  "sd_(Intercept).Worker.Id" = "SD(Worker ID)",
+  "sd_Observation.Residual" = "SD(Obs. residual)"
 )
 
 # Convert to a tidy model

@@ -17,6 +17,7 @@ library(stargazer)
 library(lme4)
 library(MuMIn)
 
+
 theme_credibility <- theme_minimal() + 
   theme(plot.title = element_text(size = 14, face = "bold"),
         axis.text = element_text(size = 12),
@@ -177,16 +178,6 @@ summary(survey1_results %>%
 
 The first thing that we will examine and plot are the model coefficients fitted by the linear regression
 ```{r}
-### original linear model ###
-
-# model <- lm(Credibility ~
-#              Medium +
-#              Study + Familiarity + Worker.Education + Worker.Age + Worker.Gender + Worker.IsUS,
-#            data = survey1_results)
-
-#############################
-
-### new mixed effect model ### 
 
 model <- lmer(Credibility ~
              Medium +
@@ -197,7 +188,7 @@ model <- lmer(Credibility ~
 summary(model)
 r.squaredGLMM(model)
 
-##############################
+
 ```
 
 
@@ -218,7 +209,9 @@ name_mapping = c(
   "Worker.Age" = "Age",
   "Worker.GenderMale" = "Gender: Male", 
   "Worker.GenderOther/UNK" = "Gender: Other/Unk",
-  "Worker.IsUSYes" = "Location: In the U.S."
+  "Worker.IsUSYes" = "Location: In the U.S.",
+  "sd_(Intercept).Worker.Id" = "SD(Worker ID)",
+  "sd_Observation.Residual" = "SD(Obs. residual)"
 )
 
 
@@ -242,7 +235,9 @@ survey1_reg <- model.tidy %>%
     scale_color_manual(values = c("darkgrey", "black")) +
     labs(title = "A. Model coefficients, Survey 1",
          y = "Estimate") +
-    theme(axis.title.y = element_blank())
+    theme(
+      axis.title.y = element_blank(),
+    )
 
 survey1_reg
 ```
@@ -284,7 +279,6 @@ survey1_reg_table <- stargazer(
 
 write(survey1_reg_table, "survey1_reg_table.html")
 ```
-
 
 
 ```{r}
@@ -356,7 +350,7 @@ survey1_dist <- survey1_results %>%
       y = "Avg. credibility") +
     theme(axis.title.y = element_blank(),
           #axis.title.x = element_blank(),
-          panel.grid.major.y = element_blank()
+          panel.grid.major.y = element_blank())
     ) 
 
 survey1_dist
@@ -396,7 +390,7 @@ survey1_dist_all <- survey1_results %>%
       panel.grid.major.x = element_blank()
       )
 
-#survey1_dist_all
+survey1_dist_all
 ```
 
 ```{r}
