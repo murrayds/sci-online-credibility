@@ -310,7 +310,7 @@ survey1_dist <- survey1_results %>%
       y = "Avg. credibility") +
     theme(axis.title.y = element_blank(),
           #axis.title.x = element_blank(),
-          panel.grid.major.y = element_blank())
+          panel.grid.major.y = element_blank()
     ) 
 
 survey1_dist
@@ -348,7 +348,7 @@ survey1_dist_all <- survey1_results %>%
       axis.title.y = element_blank(),
       axis.text = element_text(size = 10),
       panel.grid.major.x = element_blank()
-      )
+    )
 
 survey1_dist_all
 ```
