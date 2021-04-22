@@ -346,7 +346,7 @@ survey1_dist <- survey1_results %>%
     #scale_fill_brewer(palette = "Set2", direction = -1) +
     scale_fill_manual(values = c("#00aced", "lightgrey", "lightgrey", "lightgrey", "lightgrey")) +
     labs(
-      title = "B. Credibility by medium",
+      title = "B. Credibility by platform",
       y = "Avg. credibility") +
     theme(axis.title.y = element_blank(),
           #axis.title.x = element_blank(),
@@ -381,7 +381,7 @@ survey1_dist_all <- survey1_results %>%
     #scale_fill_brewer(palette = "Set2") +
     scale_fill_manual(values = rev(c("#00aced", "lightgrey", "lightgrey", "lightgrey", "lightgrey"))) +
     guides(fill = F) +
-    labs(title = "C. Response count by medium and topic") +
+    labs(title = "C. Response count by platform and topic") +
     theme(
       strip.text.y = element_text(angle = 180),
       strip.text.x = element_text(size = 10),
